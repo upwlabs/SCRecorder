@@ -583,14 +583,18 @@ static CGContextRef SCCreateContextFromPixelBuffer(CVPixelBufferRef pixelBuffer)
     if (videoTracks.count > 0 && self.videoConfiguration.enabled && !self.videoConfiguration.shouldIgnore) {
         AVAssetTrack *videoTrack = [videoTracks objectAtIndex:0];
 
+        CGSize transformedSize = CGSizeApplyAffineTransform(videoTrack.naturalSize, videoTrack.preferredTransform);
+        CGSize videoSize = CGSizeMake(ABS(transformedSize.width), ABS(transformedSize.height));
         // Input
         NSDictionary *videoSettings = [_videoConfiguration createAssetWriterOptionsWithVideoSize:videoTrack.naturalSize];
 
         _videoInput = [self addWriter:AVMediaTypeVideo withSettings:videoSettings];
         if (_videoConfiguration.keepInputAffineTransform) {
-            _videoInput.transform = videoTrack.preferredTransform;
+//            _videoInput.transform = videoTrack.preferredTransform;
+//            _videoInput.naturalSize = videoTrack.naturalSize;
         } else {
             _videoInput.transform = _videoConfiguration.affineTransform;
+            _videoInput.naturalSize = CGSizeEqualToSize(_videoConfiguration.size, CGSizeZero) ? videoSize : _videoConfiguration.size;
         }
 
         // Output
@@ -609,7 +613,7 @@ static CGContextRef SCCreateContextFromPixelBuffer(CVPixelBufferRef pixelBuffer)
         _outputBufferSize = outputBufferSize;
         _outputBufferDiffersFromInput = !CGSizeEqualToSize(_inputBufferSize, outputBufferSize);
 
-        _filter = [self _generateRenderingFilterForVideoSize:outputBufferSize];
+        _filter = [self _generateRenderingFilterForVideoSize:videoSize];
 
         if (videoComposition == nil && _filter != nil && self.translatesFilterIntoComposition) {
             videoComposition = [_filter videoCompositionWithAsset:_inputAsset];
@@ -633,7 +637,14 @@ static CGContextRef SCCreateContextFromPixelBuffer(CVPixelBufferRef pixelBuffer)
 
         AVAssetReaderOutput *reader = nil;
         if (videoComposition == nil) {
-            reader = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:videoTrack outputSettings:settings];
+            AVAssetReaderVideoCompositionOutput *videoCompositionOutput = [AVAssetReaderVideoCompositionOutput assetReaderVideoCompositionOutputWithVideoTracks:videoTracks videoSettings:settings];
+            AVVideoComposition *composition = [AVVideoComposition videoCompositionWithAsset:_inputAsset applyingCIFiltersWithHandler:^(AVAsynchronousCIImageFilteringRequest *request) {
+                CIImage *sourceImage = request.sourceImage;
+                [request finishWithImage:sourceImage context:nil];
+            }];
+            videoCompositionOutput.videoComposition = composition;
+            reader = videoCompositionOutput;
+//            reader = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:videoTrack outputSettings:settings];
         } else {
             AVAssetReaderVideoCompositionOutput *videoCompositionOutput = [AVAssetReaderVideoCompositionOutput assetReaderVideoCompositionOutputWithVideoTracks:videoTracks videoSettings:settings];
             videoCompositionOutput.videoComposition = videoComposition;
@@ -690,7 +701,7 @@ static CGContextRef SCCreateContextFromPixelBuffer(CVPixelBufferRef pixelBuffer)
     
     [_writer startSessionAtSourceTime:_timeRange.start];
     
-    _totalDuration = CMTimeGetSeconds(_inputAsset.duration);
+    _totalDuration = CMTimeGetSeconds(_timeRange.duration);
 
     [self beginReadWriteOnAudio];
     [self beginReadWriteOnVideo];

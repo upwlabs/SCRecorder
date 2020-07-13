@@ -274,6 +274,8 @@ static char* LoadedTimeRanges = "LoadedTimeRanges";
             // Return the video if it is upside down
             if (transform.b == 1 && transform.c == -1) {
                 transform = CGAffineTransformRotate(transform, M_PI);
+            } else if (transform.b == -1 && transform.c == 1) {
+                transform = CGAffineTransformRotate(transform, -M_PI);
             }
 
             if (self.autoRotate) {
